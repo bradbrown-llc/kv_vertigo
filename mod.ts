@@ -1,8 +1,8 @@
-import { KvCache, Fallbacks } from '../kvcache/mod.ts'
-import { Lazy } from 'https://deno.land/x/lazy_promise@0.0.1/mod.ts'
-import { Snail } from 'https://deno.land/x/snail@0.0.0/mod.ts'
-import { Toad } from '../toad/mod.ts'
-import { AIQ } from 'https://deno.land/x/aiq@0.0.0/mod.ts'
+import { Lazy } from 'https://cdn.jsdelivr.net/gh/bradbrown-llc/lazy@0.0.0/mod.ts'
+import { AIQ } from 'https://cdn.jsdelivr.net/gh/bradbrown-llc/aiq@0.0.0/mod.ts'
+import { Snail } from 'https://cdn.jsdelivr.net/gh/bradbrown-llc/snail@0.0.0/mod.ts'
+import { KvCache, Fallbacks } from 'https://cdn.jsdelivr.net/gh/bradbrown-llc/kvcache@0.0.1-vertigo/mod.ts'
+import { Toad } from 'https://cdn.jsdelivr.net/gh/bradbrown-llc/toad@0.0.5-vertigo/mod.ts'
 
 const replacer = (_:unknown,v:unknown)=>typeof v=='bigint'?''+v:v
 
@@ -87,31 +87,27 @@ export class KvVertigo {
         return await this.toad.feed(snail).catch(reason => new Error(reason))
     }
 
-    atomic() {
+    atomic():{ commit:()=>Promise<Error|Deno.KvCommitResult|Deno.KvCommitError> }&Deno.AtomicOperation {
         const stacky = new Error()
         const atom = this.kv.atomic()
         const originalCommit = atom.commit
-        return Object.assign(
-            atom,
-            {
-                commit: async () => {
-                    const lazy:Lazy<Error|Deno.KvCommitError|Deno.KvCommitResult> = () => originalCommit.bind(atom)()
-                    const snail = new Snail(lazy)
-                    snail.born
-                        .then(() => this.out.push(`KvVertigo.atomic.commit committing`))
-                    snail.died
-                        .then(() => this.out.push(`KvVertigo.atomic.commit committed`))
-                        .catch(reason => {
-                            const error = new Error(reason)
-                            error.message = `KvVertigo.atomic.commit failed committing`
-                            if (reason instanceof Error) error.stack += (reason.stack ? `\n${reason.stack}` : '') + (stacky.stack??'')
-                            this.err.push(error)
-                            return error
-                        })
-                    return await this.toad.feed(snail).catch(reason => new Error(reason))
-                }
-            }
-        )
+        const commit = async () => {
+            const lazy:Lazy<Error|Deno.KvCommitError|Deno.KvCommitResult> = () => originalCommit.bind(atom)()
+            const snail = new Snail(lazy)
+            snail.born
+                .then(() => this.out.push(`KvVertigo.atomic.commit committing`))
+            snail.died
+                .then(() => this.out.push(`KvVertigo.atomic.commit committed`))
+                .catch(reason => {
+                    const error = new Error(reason)
+                    error.message = `KvVertigo.atomic.commit failed committing`
+                    if (reason instanceof Error) error.stack += (reason.stack ? `\n${reason.stack}` : '') + (stacky.stack??'')
+                    this.err.push(error)
+                    return error
+                })
+            return await this.toad.feed(snail).catch(reason => new Error(reason))
+        }
+        return Object.assign(atom, { commit })
     }
 
     async delete(key: Deno.KvKey):Promise<Error|void> {
